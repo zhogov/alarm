@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Zap Remote</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  min-height: 100vh;
+  padding: 16px;
+}
+h1 { text-align: center; font-size: 1.5rem; margin-bottom: 12px; color: #fff; }
+.card {
+  background: #16213e;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.card h2 { font-size: 1rem; margin-bottom: 10px; color: #a0c4ff; }
+label { display: block; font-size: 0.85rem; margin-bottom: 4px; color: #bbb; }
+input[type="time"], input[type="text"], select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #0f3460;
+  color: #fff;
+  font-size: 1rem;
+  margin-bottom: 8px;
+  -webkit-appearance: none;
+}
+button {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+button:active { transform: scale(0.97); }
+.btn-connect { background: #0077b6; color: #fff; }
+.btn-connect.connected { background: #2a9d8f; }
+.btn-disconnect { background: #e63946; color: #fff; }
+.btn-alarm { background: #e76f51; color: #fff; }
+.btn-zap { background: #f4a261; color: #000; }
+.btn-read { background: #457b9d; color: #fff; }
+.btn-secondary { background: #333; color: #ccc; }
+.btn-sync { background: #6a4c93; color: #fff; }
+button:disabled { opacity: 0.4; cursor: default; }
+.status {
+  text-align: center;
+  font-size: 0.85rem;
+  padding: 6px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: #0f3460;
+}
+.status.ok { background: #264653; color: #2a9d8f; }
+.status.err { background: #3d0000; color: #e63946; }
+#log {
+  background: #0a0a1a;
+  border-radius: 8px;
+  padding: 10px;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #8ecae6;
+}
+.saved-devices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.saved-device {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #0f3460;
+  border: 1px solid #264653;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.saved-device:hover { background: #1a4a7a; }
+.saved-device .remove {
+  color: #e63946;
+  font-weight: bold;
+  margin-left: 4px;
+  cursor: pointer;
+}
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; }
+.alarm-preview {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 0.8rem;
+  color: #a0c4ff;
+  padding: 6px;
+  background: #0a0a1a;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+</style>
+</head>
+<body>
+
+<h1>Zap Remote</h1>
+
+<div id="statusBar" class="status">Disconnected</div>
+
+<div class="card">
+  <h2>Device</h2>
+  <div id="savedDevices" class="saved-devices"></div>
+  <button id="btnConnect" class="btn-connect" onclick="connectDevice()">Scan & Connect</button>
+  <button id="btnDisconnect" class="btn-disconnect" onclick="disconnectDevice()" disabled>Disconnect</button>
+</div>
+
+<div class="card">
+  <h2>Alarms</h2>
+  <label for="startTime">First alarm time</label>
+  <input type="time" id="startTime" value="09:00">
+  <div id="alarmPreview" class="alarm-preview"></div>
+  <button id="btnSetAlarms" class="btn-alarm" onclick="setAlarms()" disabled>Set 5 Alarms (1 min apart)</button>
+  <button id="btnReadAlarms" class="btn-read" onclick="readAlarms()" disabled>Read Alarms</button>
+</div>
+
+<div class="card">
+  <h2>Quick Actions</h2>
+  <div class="row">
+    <button id="btnZap" class="btn-zap" onclick="sendCmd('light=01')" disabled>Zap</button>
+    <button id="btnSyncTime" class="btn-sync" onclick="syncTime()" disabled>Sync Time</button>
+  </div>
+  <div class="row">
+    <button id="btnVersion" class="btn-secondary" onclick="sendCmd('version=?')" disabled>Version</button>
+    <button id="btnReadTimer" class="btn-secondary" onclick="sendCmd('sittimes=?')" disabled>Read Timer</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Log</h2>
+  <button class="btn-secondary" onclick="clearLog()" style="width:auto;margin-bottom:6px;padding:6px 12px;font-size:0.75rem">Clear</button>
+  <div id="log"></div>
+</div>
+
+<script>
+const SERVICE_UUID = 0xff01;
+const CHAR_UUID = 0xff02;
+const STORAGE_KEY = 'zap_saved_devices';
+
+let device = null;
+let server = null;
+let characteristic = null;
+
+function log(msg) {
+  const el = document.getElementById('log');
+  const ts = new Date().toLocaleTimeString();
+  el.textContent += `[${ts}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(text, cls) {
+  const el = document.getElementById('statusBar');
+  el.textContent = text;
+  el.className = 'status ' + (cls || '');
+}
+
+function setConnectedUI(connected) {
+  const btn = document.getElementById('btnConnect');
+  btn.textContent = connected ? 'Connected' : 'Scan & Connect';
+  btn.className = connected ? 'btn-connect connected' : 'btn-connect';
+  btn.disabled = connected;
+  document.getElementById('btnDisconnect').disabled = !connected;
+  document.getElementById('btnSetAlarms').disabled = !connected;
+  document.getElementById('btnReadAlarms').disabled = !connected;
+  document.getElementById('btnZap').disabled = !connected;
+  document.getElementById('btnSyncTime').disabled = !connected;
+  document.getElementById('btnVersion').disabled = !connected;
+  document.getElementById('btnReadTimer').disabled = !connected;
+}
+
+// --- Saved Devices ---
+function getSavedDevices() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveDevice(id, name) {
+  const devices = getSavedDevices();
+  if (devices.find(d => d.id === id)) return;
+  devices.push({ id, name });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(devices));
+  renderSavedDevices();
+}
+
+function removeDevice(id) {
+  const devices = getSavedDevices().filter(d => d.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(devices));
+  renderSavedDevices();
+}
+
+function renderSavedDevices() {
+  const container = document.getElementById('savedDevices');
+  const devices = getSavedDevices();
+  if (devices.length === 0) {
+    container.innerHTML = '<span style="font-size:0.8rem;color:#666">No saved devices. Scan to pair.</span>';
+    return;
+  }
+  container.innerHTML = devices.map(d =>
+    `<span class="saved-device" onclick="connectToSaved('${d.id}','${d.name}')">
+      ${d.name || d.id}
+      <span class="remove" onclick="event.stopPropagation();removeDevice('${d.id}')">&times;</span>
+    </span>`
+  ).join('');
+}
+
+// --- BLE ---
+function onDisconnected() {
+  log('Device disconnected');
+  setStatus('Disconnected', '');
+  setConnectedUI(false);
+  characteristic = null;
+  server = null;
+}
+
+async function connectToSaved(id, name) {
+  // Web Bluetooth doesn't allow reconnecting by ID without a prior requestDevice in same session.
+  // We need to do a new scan but can filter by name to make it faster.
+  log(`Reconnecting to ${name}...`);
+  await connectDevice(name);
+}
+
+async function connectDevice(filterName) {
+  try {
+    const filters = [];
+    if (filterName) {
+      filters.push({ name: filterName });
+    }
+    // Always include the service filter as a fallback
+    const options = {
+      filters: filters.length > 0
+        ? filters
+        : [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID]
+    };
+
+    setStatus('Scanning...', '');
+    device = await navigator.bluetooth.requestDevice(options);
+    log(`Selected: ${device.name || device.id}`);
+
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    setStatus('Connecting...', '');
+    server = await device.gatt.connect();
+    log('GATT connected');
+
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    characteristic = await service.getCharacteristic(CHAR_UUID);
+
+    await characteristic.startNotifications();
+    characteristic.addEventListener('characteristicvaluechanged', onNotification);
+    log('Notifications enabled');
+
+    saveDevice(device.id, device.name || device.id);
+
+    setStatus(`Connected: ${device.name || device.id}`, 'ok');
+    setConnectedUI(true);
+  } catch (e) {
+    log(`Error: ${e.message}`);
+    setStatus('Connection failed', 'err');
+    setConnectedUI(false);
+  }
+}
+
+async function disconnectDevice() {
+  if (device && device.gatt.connected) {
+    device.gatt.disconnect();
+  }
+}
+
+function onNotification(event) {
+  const value = event.target.value;
+  const bytes = new Uint8Array(value.buffer);
+  let text = '';
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] !== 0) text += String.fromCharCode(bytes[i]);
+  }
+  log(`[RX] ${text}`);
+}
+
+async function sendCmd(cmd) {
+  if (!characteristic) { log('Not connected'); return; }
+  try {
+    log(`[TX] ${cmd}`);
+    const encoder = new TextEncoder();
+    await characteristic.writeValueWithResponse(encoder.encode(cmd));
+  } catch (e) {
+    log(`Write error: ${e.message}`);
+  }
+}
+
+// --- Alarms ---
+function generateAlarms(startTime) {
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const alarms = [];
+  for (let i = 0; i < 5; i++) {
+    const totalMinutes = startMinute + i;
+    const h = (startHour + Math.floor(totalMinutes / 60)) % 24;
+    const m = totalMinutes % 60;
+    const n = i;
+    const p = i + 1;
+    alarms.push(
+      `altimes=21h=${String(h).padStart(2,'0')}m=${String(m).padStart(2,'0')}n=${String(n).padStart(2,'0')}m=0p=${String(p).padStart(2,'0')}on=1w=7f`
+    );
+  }
+  return alarms;
+}
+
+function updateAlarmPreview() {
+  const time = document.getElementById('startTime').value;
+  if (!time) return;
+  const alarms = generateAlarms(time);
+  const [h, m] = time.split(':').map(Number);
+  const lines = alarms.map((_, i) => {
+    const tm = (m + i) % 60;
+    const th = (h + Math.floor((m + i) / 60)) % 24;
+    return `${String(th).padStart(2,'0')}:${String(tm).padStart(2,'0')}  power ${i+1}`;
+  });
+  document.getElementById('alarmPreview').textContent = lines.join('\n');
+}
+
+async function setAlarms() {
+  const time = document.getElementById('startTime').value;
+  if (!time) { log('Set a start time first'); return; }
+  const alarms = generateAlarms(time);
+  for (const cmd of alarms) {
+    await sendCmd(cmd);
+    await new Promise(r => setTimeout(r, 300));
+  }
+  log('All 5 alarms set');
+}
+
+async function readAlarms() {
+  await sendCmd('alarm=?');
+}
+
+function syncTime() {
+  const now = new Date();
+  const ts = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+    String(now.getHours()).padStart(2, '0'),
+    String(now.getMinutes()).padStart(2, '0'),
+    String(now.getSeconds()).padStart(2, '0')
+  ].join('');
+  sendCmd(`tset=${ts}`);
+}
+
+function clearLog() {
+  document.getElementById('log').textContent = '';
+}
+
+// Init
+document.getElementById('startTime').addEventListener('input', updateAlarmPreview);
+renderSavedDevices();
+updateAlarmPreview();
+</script>
+</body>
+</html>
