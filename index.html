@@ -148,8 +148,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 </div>
 
 <script>
-const SERVICE_UUID = 0xff01;
-const CHAR_UUID = 0xff02;
+const SERVICE_UUID = '0000ff01-0000-1000-8000-00805f9b34fb';
+const CHAR_UUID = '0000ff02-0000-1000-8000-00805f9b34fb';
 const STORAGE_KEY = 'zap_saved_devices';
 
 let device = null;
@@ -181,6 +181,10 @@ function setConnectedUI(connected) {
   document.getElementById('btnSyncTime').disabled = !connected;
   document.getElementById('btnVersion').disabled = !connected;
   document.getElementById('btnReadTimer').disabled = !connected;
+}
+
+function hasBluetooth() {
+  return !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
 }
 
 // --- Saved Devices ---
@@ -228,25 +232,20 @@ function onDisconnected() {
 }
 
 async function connectToSaved(id, name) {
-  // Web Bluetooth doesn't allow reconnecting by ID without a prior requestDevice in same session.
-  // We need to do a new scan but can filter by name to make it faster.
   log(`Reconnecting to ${name}...`);
   await connectDevice(name);
 }
 
 async function connectDevice(filterName) {
+  if (!hasBluetooth()) {
+    log('Web Bluetooth not available. Use Bluefy (iOS) or Chrome (desktop).');
+    setStatus('Bluetooth not supported', 'err');
+    return;
+  }
   try {
-    const filters = [];
-    if (filterName) {
-      filters.push({ name: filterName });
-    }
-    // Always include the service filter as a fallback
-    const options = {
-      filters: filters.length > 0
-        ? filters
-        : [{ services: [SERVICE_UUID] }],
-      optionalServices: [SERVICE_UUID]
-    };
+    const options = filterName
+      ? { filters: [{ name: filterName }], optionalServices: [SERVICE_UUID] }
+      : { acceptAllDevices: true, optionalServices: [SERVICE_UUID] };
 
     setStatus('Scanning...', '');
     device = await navigator.bluetooth.requestDevice(options);
@@ -270,15 +269,19 @@ async function connectDevice(filterName) {
     setStatus(`Connected: ${device.name || device.id}`, 'ok');
     setConnectedUI(true);
   } catch (e) {
-    log(`Error: ${e.message}`);
+    log(`Error: ${e.message || e}`);
     setStatus('Connection failed', 'err');
     setConnectedUI(false);
   }
 }
 
 async function disconnectDevice() {
-  if (device && device.gatt.connected) {
-    device.gatt.disconnect();
+  try {
+    if (device && device.gatt && device.gatt.connected) {
+      device.gatt.disconnect();
+    }
+  } catch (e) {
+    log(`Disconnect error: ${e.message || e}`);
   }
 }
 
@@ -292,14 +295,22 @@ function onNotification(event) {
   log(`[RX] ${text}`);
 }
 
+async function writeChar(data) {
+  if (characteristic.writeValueWithResponse) {
+    await characteristic.writeValueWithResponse(data);
+  } else {
+    await characteristic.writeValue(data);
+  }
+}
+
 async function sendCmd(cmd) {
   if (!characteristic) { log('Not connected'); return; }
   try {
     log(`[TX] ${cmd}`);
     const encoder = new TextEncoder();
-    await characteristic.writeValueWithResponse(encoder.encode(cmd));
+    await writeChar(encoder.encode(cmd));
   } catch (e) {
-    log(`Write error: ${e.message}`);
+    log(`Write error: ${e.message || e}`);
   }
 }
 
