@@ -100,8 +100,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 </head>
 <body>
 
-<h1>Zap Remote</h1>
-
 <div id="statusBar" class="status">Disconnected</div>
 
 <div class="card">
@@ -113,7 +111,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 <div class="card">
   <h2>Alarms</h2>
-  <label for="startTime">First alarm time (24h format)</label>
   <input type="text" id="startTime" value="09:00" placeholder="HH:MM (e.g., 14:30)" maxlength="5">
   <button id="btnSetAlarms" class="btn-alarm" onclick="setAlarms()" disabled>Set 5 Alarms (1 min apart)</button>
   <button id="btnReadAlarms" class="btn-read" onclick="readAlarms()" disabled>Read Alarms</button>
