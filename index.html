@@ -133,10 +133,8 @@ let lastSelectedTime = '09:00'; // Fallback starting time
 function log(msg) {
   const el = document.getElementById('log');
   const ts = new Date().toLocaleTimeString([], { hour12: false });
-  el.textContent += `[${ts}] ${msg}\n`;
-  // Without max-height, scrolling the container doesn't do much, 
-  // but if the window needs to scroll to see the new log, we can use this:
-  // window.scrollTo(0, document.body.scrollHeight);
+  // Prepend the new log message so it appears at the top (reverse sorted)
+  el.textContent = `[${ts}] ${msg}\n` + el.textContent;
 }
 
 function setConnectedUI(connected) {
