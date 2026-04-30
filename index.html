@@ -237,6 +237,10 @@ async function finishConnect() {
   // Sync the time automatically upon a successful connection
   log('Setting time on connect...');
   await syncTime();
+
+  // Read existing alarms so we can populate the UI
+  log('Reading existing alarms...');
+  await readAlarms();
 }
 
 async function connectToSaved(id, name) {
@@ -429,7 +433,22 @@ async function setAlarms() {
 }
 
 async function readAlarms() {
+  rxAccumulator = '';
   await sendCmd('alarm=?');
+  
+  // Wait for data to arrive
+  for (let poll = 0; poll < 10; poll++) {
+    if (rxAccumulator.includes('h=')) break;
+    await new Promise(r => setTimeout(r, 150));
+  }
+
+  // Extract the first alarm time specifically
+  const match = rxAccumulator.match(/h=(\d{2})m=(\d{2})/);
+  if (match) {
+    const timeStr = `${match[1]}:${match[2]}`;
+    document.getElementById('startTime').value = timeStr;
+    log(`Loaded first alarm into UI: ${timeStr}`);
+  }
 }
 
 async function syncTime() {
