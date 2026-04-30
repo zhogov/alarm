@@ -254,6 +254,9 @@ async function finishConnect() {
   // Sync the time automatically upon a successful connection
   log('Setting time on connect...');
   await syncTime();
+
+  // Read current alarms and update UI
+  await readAlarms();
 }
 
 async function connectToSaved(id, name) {
@@ -446,7 +449,32 @@ async function setAlarms() {
 }
 
 async function readAlarms() {
+  log('Reading alarms...');
+  rxAccumulator = '';
   await sendCmd('alarm=?');
+  
+  // Wait for data to arrive
+  for (let poll = 0; poll < 15; poll++) {
+    if (rxAccumulator.includes('h=') && rxAccumulator.includes('m=')) {
+      await new Promise(r => setTimeout(r, 200)); // allow buffer to fill
+      break;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  
+  // Parse the first alarm found
+  const match = rxAccumulator.match(/h=(\d{2})m=(\d{2})/);
+  if (match) {
+    const timeStr = `${match[1]}:${match[2]}`;
+    const startTimeInput = document.getElementById('startTime');
+    if (startTimeInput.type === 'time') {
+       startTimeInput.value = timeStr;
+       lastSelectedTime = timeStr;
+    }
+    log(`Updated picker to ${timeStr}`);
+  } else {
+    log('No parsed alarms found.');
+  }
 }
 
 async function syncTime() {
