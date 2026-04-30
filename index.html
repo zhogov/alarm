@@ -37,6 +37,8 @@ input[type="time"], input[type="text"], select {
 /* Styles for the time input */
 #startTime {
   text-align: center;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+  letter-spacing: 2px;
   font-size: 3rem;
   font-weight: bold;
   padding: 15px 10px;
@@ -70,7 +72,7 @@ button:active { transform: scale(0.97); }
 .btn-read { background: #457b9d; color: #fff; }
 .btn-secondary { background: #333; color: #ccc; }
 .btn-sync { background: #6a4c93; color: #fff; }
-button:disabled { opacity: 0.4; cursor: default; }
+button:disabled, input:disabled { opacity: 0.4; cursor: default; }
 #log {
   background: #0a0a1a;
   border-radius: 8px;
@@ -97,7 +99,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 </div>
 
 <div class="card">
-  <input type="time" id="startTime" value="09:00">
+  <input type="text" id="startTime" value="--:--" disabled>
   <button id="btnSetAlarms" class="btn-alarm" onclick="setAlarms()" disabled>Set 5 Alarms (1 min apart)</button>
 </div>
 
@@ -128,6 +130,7 @@ let device = null;
 let server = null;
 let characteristic = null;
 let rxAccumulator = '';
+let lastSelectedTime = '09:00'; // Fallback starting time
 
 function log(msg) {
   const el = document.getElementById('log');
@@ -139,14 +142,28 @@ function log(msg) {
 function setConnectedUI(connected) {
   const btn = document.getElementById('btnConnect');
   const savedContainer = document.getElementById('savedDevices');
+  const startTimeInput = document.getElementById('startTime');
 
   // Toggle visibility of the connect buttons based on connection state
   if (connected) {
     btn.style.display = 'none';
     savedContainer.style.display = 'none';
+    
+    // Enable and restore time input
+    startTimeInput.type = 'time';
+    startTimeInput.value = lastSelectedTime;
+    startTimeInput.disabled = false;
   } else {
     savedContainer.style.display = 'block';
     renderSavedDevices(); // This handles showing/hiding btnConnect based on saved devices
+    
+    // Save previous time and turn into placeholder
+    if (startTimeInput.type === 'time' && startTimeInput.value) {
+      lastSelectedTime = startTimeInput.value;
+    }
+    startTimeInput.type = 'text';
+    startTimeInput.value = '--:--';
+    startTimeInput.disabled = true;
   }
 
   document.getElementById('btnDisconnect').style.display = connected ? 'block' : 'none';
@@ -237,10 +254,6 @@ async function finishConnect() {
   // Sync the time automatically upon a successful connection
   log('Setting time on connect...');
   await syncTime();
-
-  // Read existing alarms so we can populate the UI
-  log('Reading existing alarms...');
-  await readAlarms();
 }
 
 async function connectToSaved(id, name) {
@@ -433,22 +446,7 @@ async function setAlarms() {
 }
 
 async function readAlarms() {
-  rxAccumulator = '';
   await sendCmd('alarm=?');
-  
-  // Wait for data to arrive
-  for (let poll = 0; poll < 10; poll++) {
-    if (rxAccumulator.includes('h=')) break;
-    await new Promise(r => setTimeout(r, 150));
-  }
-
-  // Extract the first alarm time specifically
-  const match = rxAccumulator.match(/h=(\d{2})m=(\d{2})/);
-  if (match) {
-    const timeStr = `${match[1]}:${match[2]}`;
-    document.getElementById('startTime').value = timeStr;
-    log(`Loaded first alarm into UI: ${timeStr}`);
-  }
 }
 
 async function syncTime() {
