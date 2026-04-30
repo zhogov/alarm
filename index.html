@@ -120,11 +120,15 @@ button:disabled { opacity: 0.4; cursor: default; }
 </div>
 
 <div class="card">
-  <h2>Quick Actions</h2>
-  <button id="btnZap" class="btn-zap" onclick="sendCmd('light=01')" disabled>Zap</button>
-  <button id="btnSyncTime" class="btn-sync" onclick="syncTime()" disabled>Sync Time</button>
-  <button id="btnVersion" class="btn-secondary" onclick="sendCmd('version=?')" disabled>Version</button>
-  <button id="btnReadTimer" class="btn-secondary" onclick="sendCmd('sittimes=?')" disabled>Read Timer</button>
+  <details>
+    <summary style="font-size: 1rem; color: #a0c4ff; font-weight: bold; cursor: pointer;">Quick Actions</summary>
+    <div style="margin-top: 10px;">
+      <button id="btnZap" class="btn-zap" onclick="sendCmd('light=01')" disabled>Zap</button>
+      <button id="btnSyncTime" class="btn-sync" onclick="syncTime()" disabled>Sync Time</button>
+      <button id="btnVersion" class="btn-secondary" onclick="sendCmd('version=?')" disabled>Version</button>
+      <button id="btnReadTimer" class="btn-secondary" onclick="sendCmd('sittimes=?')" disabled>Read Timer</button>
+    </div>
+  </details>
 </div>
 
 <div class="card">
