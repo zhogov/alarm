@@ -29,7 +29,7 @@ input[type="time"], input[type="text"], select {
   border: 1px solid #333;
   background: #0f3460;
   color: #fff;
-  font-size: 1rem;
+  font-size: 1.5rem;
   margin-bottom: 8px;
   -webkit-appearance: none;
 }
@@ -222,7 +222,7 @@ function renderSavedDevices() {
         Connect ${d.name || d.id}
       </button>
       <button class="btn-disconnect" style="flex: 1; margin-bottom: 0;" onclick="removeDevice('${d.id}')">
-        Forget
+        F
       </button>
     </div>
   `).join('');
