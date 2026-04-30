@@ -11,25 +11,25 @@ body {
   background: #1a1a2e;
   color: #e0e0e0;
   min-height: 100vh;
-  padding: 16px;
+  padding: 4px;
 }
-h1 { text-align: center; font-size: 1.5rem; margin-bottom: 12px; color: #fff; }
 .card {
   background: #16213e;
   border-radius: 12px;
   padding: 16px;
+  margin-top: 12px;
   margin-bottom: 12px;
 }
 .card h2 { font-size: 1rem; margin-bottom: 10px; color: #a0c4ff; }
 label { display: block; font-size: 0.85rem; margin-bottom: 4px; color: #bbb; }
 input[type="time"], input[type="text"], select {
   width: 100%;
-  padding: 10px;
+  padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid #333;
   background: #0f3460;
   color: #fff;
-  font-size: 1.5rem;
+  font-size: 2rem;
   margin-bottom: 8px;
   -webkit-appearance: none;
 }
@@ -132,7 +132,7 @@ let lastSelectedTime = '09:00'; // Fallback starting time
 
 function log(msg) {
   const el = document.getElementById('log');
-  const ts = new Date().toLocaleTimeString();
+  const ts = new Date().toLocaleTimeString([], { hour12: false });
   el.textContent += `[${ts}] ${msg}\n`;
   // Without max-height, scrolling the container doesn't do much, 
   // but if the window needs to scroll to see the new log, we can use this:
