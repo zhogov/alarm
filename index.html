@@ -72,16 +72,6 @@ button:active { transform: scale(0.97); }
 .btn-secondary { background: #333; color: #ccc; }
 .btn-sync { background: #6a4c93; color: #fff; }
 button:disabled { opacity: 0.4; cursor: default; }
-.status {
-  text-align: center;
-  font-size: 0.85rem;
-  padding: 6px;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  background: #0f3460;
-}
-.status.ok { background: #264653; color: #2a9d8f; }
-.status.err { background: #3d0000; color: #e63946; }
 #log {
   background: #0a0a1a;
   border-radius: 8px;
@@ -101,17 +91,13 @@ button:disabled { opacity: 0.4; cursor: default; }
 </head>
 <body>
 
-<div id="statusBar" class="status">Disconnected</div>
-
 <div class="card">
-  <h2>Device</h2>
   <div id="savedDevices"></div>
   <button id="btnConnect" class="btn-connect" onclick="connectDevice()">Scan & Connect</button>
-  <button id="btnDisconnect" class="btn-disconnect" onclick="disconnectDevice()" disabled>Disconnect</button>
+  <button id="btnDisconnect" class="btn-disconnect" style="display: none;" onclick="disconnectDevice()">Disconnect</button>
 </div>
 
 <div class="card">
-  <h2>Alarms</h2>
   <input type="time" id="startTime" value="09:00">
   <button id="btnSetAlarms" class="btn-alarm" onclick="setAlarms()" disabled>Set 5 Alarms (1 min apart)</button>
 </div>
@@ -130,8 +116,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 </div>
 
 <div class="card">
-  <h2>Log</h2>
-  <button class="btn-secondary" onclick="clearLog()" style="width:auto;margin-bottom:6px;padding:6px 12px;font-size:0.75rem">Clear</button>
+  <button class="btn-secondary" onclick="clearLog()" style="width:auto;margin-bottom:6px;padding:6px 12px;font-size:0.75rem">Clear Log</button>
   <div id="log"></div>
 </div>
 
@@ -152,12 +137,6 @@ function log(msg) {
   el.scrollTop = el.scrollHeight;
 }
 
-function setStatus(text, cls) {
-  const el = document.getElementById('statusBar');
-  el.textContent = text;
-  el.className = 'status ' + (cls || '');
-}
-
 function setConnectedUI(connected) {
   const btn = document.getElementById('btnConnect');
   const savedContainer = document.getElementById('savedDevices');
@@ -175,7 +154,7 @@ function setConnectedUI(connected) {
     renderSavedDevices(); // This handles showing/hiding btnConnect based on saved devices
   }
 
-  document.getElementById('btnDisconnect').disabled = !connected;
+  document.getElementById('btnDisconnect').style.display = connected ? 'block' : 'none';
   document.getElementById('btnSetAlarms').disabled = !connected;
   document.getElementById('btnReadAlarms').disabled = !connected;
   document.getElementById('btnZap').disabled = !connected;
@@ -240,7 +219,6 @@ function renderSavedDevices() {
 // --- BLE ---
 function onDisconnected() {
   log('Device disconnected');
-  setStatus('Disconnected', '');
   setConnectedUI(false);
   characteristic = null;
   server = null;
@@ -248,7 +226,6 @@ function onDisconnected() {
 
 async function finishConnect() {
   device.addEventListener('gattserverdisconnected', onDisconnected);
-  setStatus('Connecting...', '');
   server = await device.gatt.connect();
   log('GATT connected');
 
@@ -259,9 +236,12 @@ async function finishConnect() {
   characteristic.addEventListener('characteristicvaluechanged', onNotification);
   log('Notifications enabled');
 
-  setStatus(`Connected: ${device.name || device.id}`, 'ok');
   setConnectedUI(true);
   saveDevice(device.id, device.name || device.id);
+
+  // Sync the time automatically upon a successful connection
+  log('Setting time on connect...');
+  await syncTime();
 }
 
 async function connectToSaved(id, name) {
@@ -269,7 +249,6 @@ async function connectToSaved(id, name) {
   try {
     // Try getDevices() first — reconnects without picker
     if (navigator.bluetooth.getDevices) {
-      setStatus('Reconnecting...', '');
       const granted = await navigator.bluetooth.getDevices();
       const match = granted.find(d => d.id === id || d.name === name);
       if (match) {
@@ -291,7 +270,6 @@ async function connectToSaved(id, name) {
 async function connectDevice(filterName) {
   if (!hasBluetooth()) {
     log('Web Bluetooth not available. Use Bluefy (iOS) or Chrome (desktop).');
-    setStatus('Bluetooth not supported', 'err');
     return;
   }
   try {
@@ -302,7 +280,6 @@ async function connectDevice(filterName) {
       options = { acceptAllDevices: true, optionalServices: [SERVICE_UUID] };
     }
 
-    setStatus('Scanning...', '');
     device = await navigator.bluetooth.requestDevice(options);
     log(`Selected: ${device.name || device.id}`);
     await finishConnect();
@@ -323,7 +300,6 @@ async function connectDevice(filterName) {
     } else {
       log(`Error: ${e.message || e}`);
     }
-    setStatus('Connection failed', 'err');
     setConnectedUI(false);
   }
 }
@@ -362,7 +338,21 @@ async function sendCmd(cmd) {
   try {
     log(`[TX] ${cmd}`);
     const encoder = new TextEncoder();
+    const initialLen = rxAccumulator.length;
+
     await writeChar(encoder.encode(cmd));
+
+    // Always wait for a result up to 500ms
+    // Check every 50ms (up to 10 times) to see if new data arrived
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 50));
+      if (rxAccumulator.length > initialLen) {
+        // Data has started arriving, give it an extra 50ms to finish streaming
+        await new Promise(r => setTimeout(r, 50));
+        break;
+      }
+    }
+
   } catch (e) {
     log(`Write error: ${e.message || e}`);
   }
@@ -403,7 +393,7 @@ async function setAlarms() {
     log(`Setting alarms (Attempt ${attempt}/3)...`);
     for (const cmd of alarms) {
       await sendCmd(cmd);
-      await new Promise(r => setTimeout(r, 300));
+      // Removed the fixed 300ms delay here because sendCmd now inherently waits for results
     }
     
     log('Requesting verification...');
@@ -447,7 +437,7 @@ async function readAlarms() {
   await sendCmd('alarm=?');
 }
 
-function syncTime() {
+async function syncTime() {
   const now = new Date();
   const ts = [
     now.getFullYear(),
@@ -457,7 +447,7 @@ function syncTime() {
     String(now.getMinutes()).padStart(2, '0'),
     String(now.getSeconds()).padStart(2, '0')
   ].join('');
-  sendCmd(`tset=${ts}`);
+  await sendCmd(`tset=${ts}`);
 }
 
 function clearLog() {
@@ -479,7 +469,6 @@ renderSavedDevices();
       const match = granted.find(d => d.id === s.id || d.name === s.name);
       if (match) {
         log(`Auto-reconnecting to ${match.name || match.id}...`);
-        setStatus('Auto-reconnecting...', '');
         device = match;
         await finishConnect();
         return;
