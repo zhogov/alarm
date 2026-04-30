@@ -231,9 +231,46 @@ function onDisconnected() {
   server = null;
 }
 
+async function finishConnect() {
+  device.addEventListener('gattserverdisconnected', onDisconnected);
+  setStatus('Connecting...', '');
+  server = await device.gatt.connect();
+  log('GATT connected');
+
+  const service = await server.getPrimaryService(SERVICE_UUID);
+  characteristic = await service.getCharacteristic(CHAR_UUID);
+
+  await characteristic.startNotifications();
+  characteristic.addEventListener('characteristicvaluechanged', onNotification);
+  log('Notifications enabled');
+
+  saveDevice(device.id, device.name || device.id);
+  setStatus(`Connected: ${device.name || device.id}`, 'ok');
+  setConnectedUI(true);
+}
+
 async function connectToSaved(id, name) {
-  log(`Reconnecting to ${name}...`);
-  await connectDevice(name);
+  if (!hasBluetooth()) return;
+  try {
+    // Try getDevices() first — reconnects without picker
+    if (navigator.bluetooth.getDevices) {
+      setStatus('Reconnecting...', '');
+      const granted = await navigator.bluetooth.getDevices();
+      const match = granted.find(d => d.id === id || d.name === name);
+      if (match) {
+        log(`Auto-reconnecting to ${match.name || match.id}...`);
+        device = match;
+        await finishConnect();
+        return;
+      }
+    }
+    // Fall back to filtered picker
+    log(`Scanning for ${name}...`);
+    await connectDevice(name);
+  } catch (e) {
+    log(`Reconnect failed, opening picker: ${e.message || e}`);
+    await connectDevice(name);
+  }
 }
 
 async function connectDevice(filterName) {
@@ -243,33 +280,34 @@ async function connectDevice(filterName) {
     return;
   }
   try {
-    const options = filterName
-      ? { filters: [{ name: filterName }], optionalServices: [SERVICE_UUID] }
-      : { acceptAllDevices: true, optionalServices: [SERVICE_UUID] };
+    let options;
+    if (filterName) {
+      options = { filters: [{ name: filterName }], optionalServices: [SERVICE_UUID] };
+    } else {
+      options = { acceptAllDevices: true, optionalServices: [SERVICE_UUID] };
+    }
 
     setStatus('Scanning...', '');
     device = await navigator.bluetooth.requestDevice(options);
     log(`Selected: ${device.name || device.id}`);
-
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-
-    setStatus('Connecting...', '');
-    server = await device.gatt.connect();
-    log('GATT connected');
-
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    characteristic = await service.getCharacteristic(CHAR_UUID);
-
-    await characteristic.startNotifications();
-    characteristic.addEventListener('characteristicvaluechanged', onNotification);
-    log('Notifications enabled');
-
-    saveDevice(device.id, device.name || device.id);
-
-    setStatus(`Connected: ${device.name || device.id}`, 'ok');
-    setConnectedUI(true);
+    await finishConnect();
   } catch (e) {
-    log(`Error: ${e.message || e}`);
+    // If name filter fails (Bluefy), retry with acceptAllDevices
+    if (filterName && e.name !== 'NotFoundError') {
+      log(`Filtered scan failed, showing all devices...`);
+      try {
+        device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true, optionalServices: [SERVICE_UUID]
+        });
+        log(`Selected: ${device.name || device.id}`);
+        await finishConnect();
+        return;
+      } catch (e2) {
+        log(`Error: ${e2.message || e2}`);
+      }
+    } else {
+      log(`Error: ${e.message || e}`);
+    }
     setStatus('Connection failed', 'err');
     setConnectedUI(false);
   }
@@ -380,6 +418,29 @@ function clearLog() {
 document.getElementById('startTime').addEventListener('input', updateAlarmPreview);
 renderSavedDevices();
 updateAlarmPreview();
+
+// Auto-reconnect to last used device on page load
+(async function autoReconnect() {
+  if (!hasBluetooth() || !navigator.bluetooth.getDevices) return;
+  const saved = getSavedDevices();
+  if (saved.length === 0) return;
+  try {
+    const granted = await navigator.bluetooth.getDevices();
+    // Try the most recently saved device first
+    for (const s of saved.slice().reverse()) {
+      const match = granted.find(d => d.id === s.id || d.name === s.name);
+      if (match) {
+        log(`Auto-reconnecting to ${match.name || match.id}...`);
+        setStatus('Auto-reconnecting...', '');
+        device = match;
+        await finishConnect();
+        return;
+      }
+    }
+  } catch (e) {
+    log(`Auto-reconnect unavailable: ${e.message || e}`);
+  }
+})();
 </script>
 </body>
 </html>
