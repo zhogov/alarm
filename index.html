@@ -94,25 +94,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   word-break: break-all;
   color: #8ecae6;
 }
-.saved-devices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.saved-device {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: #0f3460;
-  border: 1px solid #264653;
-  border-radius: 20px;
-  padding: 4px 10px;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.saved-device:hover { background: #1a4a7a; }
-.saved-device .remove {
-  color: #e63946;
-  font-weight: bold;
-  margin-left: 4px;
-  cursor: pointer;
-}
+
 .row { display: flex; gap: 8px; }
 .row > * { flex: 1; }
 </style>
@@ -123,7 +105,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 <div class="card">
   <h2>Device</h2>
-  <div id="savedDevices" class="saved-devices"></div>
+  <div id="savedDevices"></div>
   <button id="btnConnect" class="btn-connect" onclick="connectDevice()">Scan & Connect</button>
   <button id="btnDisconnect" class="btn-disconnect" onclick="disconnectDevice()" disabled>Disconnect</button>
 </div>
@@ -177,9 +159,21 @@ function setStatus(text, cls) {
 
 function setConnectedUI(connected) {
   const btn = document.getElementById('btnConnect');
+  const savedContainer = document.getElementById('savedDevices');
+
   btn.textContent = connected ? 'Connected' : 'Scan & Connect';
   btn.className = connected ? 'btn-connect connected' : 'btn-connect';
   btn.disabled = connected;
+
+  // Toggle visibility of the connect buttons based on connection state
+  if (connected) {
+    btn.style.display = 'block';
+    savedContainer.style.display = 'none';
+  } else {
+    savedContainer.style.display = 'block';
+    renderSavedDevices(); // This handles showing/hiding btnConnect based on saved devices
+  }
+
   document.getElementById('btnDisconnect').disabled = !connected;
   document.getElementById('btnSetAlarms').disabled = !connected;
   document.getElementById('btnReadAlarms').disabled = !connected;
@@ -215,17 +209,31 @@ function removeDevice(id) {
 
 function renderSavedDevices() {
   const container = document.getElementById('savedDevices');
+  const btnConnect = document.getElementById('btnConnect');
   const devices = getSavedDevices();
+  const isConnected = (device && device.gatt && device.gatt.connected);
+
   if (devices.length === 0) {
-    container.innerHTML = '<span style="font-size:0.8rem;color:#666">No saved devices. Scan to pair.</span>';
+    container.innerHTML = '';
+    if (!isConnected) btnConnect.style.display = 'block';
     return;
   }
-  container.innerHTML = devices.map(d =>
-    `<span class="saved-device" onclick="connectToSaved('${d.id}','${d.name}')">
-      ${d.name || d.id}
-      <span class="remove" onclick="event.stopPropagation();removeDevice('${d.id}')">&times;</span>
-    </span>`
-  ).join('');
+
+  // If we're disconnected and there are saved devices, hide the generic Scan button
+  if (!isConnected) {
+    btnConnect.style.display = 'none';
+  }
+
+  container.innerHTML = devices.map(d => `
+    <div class="row" style="margin-bottom: 8px;">
+      <button class="btn-connect" style="flex: 2; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" onclick="connectToSaved('${d.id}','${d.name}')">
+        Connect ${d.name || d.id}
+      </button>
+      <button class="btn-disconnect" style="flex: 1; margin-bottom: 0;" onclick="removeDevice('${d.id}')">
+        Forget
+      </button>
+    </div>
+  `).join('');
 }
 
 // --- BLE ---
@@ -250,9 +258,9 @@ async function finishConnect() {
   characteristic.addEventListener('characteristicvaluechanged', onNotification);
   log('Notifications enabled');
 
-  saveDevice(device.id, device.name || device.id);
   setStatus(`Connected: ${device.name || device.id}`, 'ok');
   setConnectedUI(true);
+  saveDevice(device.id, device.name || device.id);
 }
 
 async function connectToSaved(id, name) {
