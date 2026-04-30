@@ -155,6 +155,11 @@ let device = null;
 let server = null;
 let characteristic = null;
 
+// New Globals for BT Syncing/Verification
+let writeQueue = Promise.resolve();
+let responseResolvers = [];
+let rxBuffer = '';
+
 function log(msg) {
   const el = document.getElementById('log');
   const ts = new Date().toLocaleTimeString();
@@ -251,7 +256,6 @@ async function finishConnect() {
 async function connectToSaved(id, name) {
   if (!hasBluetooth()) return;
   try {
-    // Try getDevices() first — reconnects without picker
     if (navigator.bluetooth.getDevices) {
       setStatus('Reconnecting...', '');
       const granted = await navigator.bluetooth.getDevices();
@@ -263,7 +267,6 @@ async function connectToSaved(id, name) {
         return;
       }
     }
-    // Fall back to filtered picker
     log(`Scanning for ${name}...`);
     await connectDevice(name);
   } catch (e) {
@@ -274,7 +277,7 @@ async function connectToSaved(id, name) {
 
 async function connectDevice(filterName) {
   if (!hasBluetooth()) {
-    log('Web Bluetooth not available. Use Bluefy (iOS) or Chrome (desktop).');
+    log('Web Bluetooth not available.');
     setStatus('Bluetooth not supported', 'err');
     return;
   }
@@ -291,7 +294,6 @@ async function connectDevice(filterName) {
     log(`Selected: ${device.name || device.id}`);
     await finishConnect();
   } catch (e) {
-    // If name filter fails (Bluefy), retry with acceptAllDevices
     if (filterName && e.name !== 'NotFoundError') {
       log(`Filtered scan failed, showing all devices...`);
       try {
@@ -330,14 +332,55 @@ function onNotification(event) {
     if (bytes[i] !== 0) text += String.fromCharCode(bytes[i]);
   }
   log(`[RX] ${text}`);
+  rxBuffer += text;
+
+  // Resolve pending response waiters
+  const currentResolvers = [...responseResolvers];
+  responseResolvers = [];
+  currentResolvers.forEach(resolve => resolve(text));
 }
 
+// Requirement 2 Helper: Wait for next notification
+function waitForResponse(timeoutMs = 1000) {
+  return new Promise(resolve => {
+    let isResolved = false;
+    const timer = setTimeout(() => {
+      if (!isResolved) {
+        isResolved = true;
+        const idx = responseResolvers.indexOf(resolveFn);
+        if (idx > -1) responseResolvers.splice(idx, 1);
+        resolve(null); // Timeout occurred
+      }
+    }, timeoutMs);
+    
+    const resolveFn = (text) => {
+      if (!isResolved) {
+        isResolved = true;
+        clearTimeout(timer);
+        resolve(text);
+      }
+    };
+    responseResolvers.push(resolveFn);
+  });
+}
+
+// Requirement 1: Enforce 50ms gap between any sequential writes using a promise queue
 async function writeChar(data) {
-  if (characteristic.writeValueWithResponse) {
-    await characteristic.writeValueWithResponse(data);
-  } else {
-    await characteristic.writeValue(data);
-  }
+  writeQueue = writeQueue.then(async () => {
+    try {
+      if (characteristic.writeValueWithResponse) {
+        await characteristic.writeValueWithResponse(data);
+      } else {
+        await characteristic.writeValue(data);
+      }
+    } catch (e) {
+      log(`Write error: ${e.message || e}`);
+      // Log the error but don't re-throw to avoid permanently breaking the queue
+    }
+    // Strict 50ms delay after the write has resolved
+    await new Promise(r => setTimeout(r, 50));
+  });
+  return writeQueue;
 }
 
 async function sendCmd(cmd) {
@@ -347,7 +390,7 @@ async function sendCmd(cmd) {
     const encoder = new TextEncoder();
     await writeChar(encoder.encode(cmd));
   } catch (e) {
-    log(`Write error: ${e.message || e}`);
+    log(`Command error: ${e.message || e}`);
   }
 }
 
@@ -368,18 +411,68 @@ function generateAlarms(startTime) {
   return alarms;
 }
 
+// Requirement 3 Helper: Verify alarms were set correctly
+async function checkAlarms(alarms) {
+  rxBuffer = ''; // Clear tracking buffer
+  await sendCmd('alarm=?');
+  
+  // Wait enough time to capture the entire response burst
+  await new Promise(r => setTimeout(r, 1500)); 
+  
+  let allSet = true;
+  for (let i = 0; i < alarms.length; i++) {
+    // Parse the core components of the expected alarm string (e.g., h=09m=00n=00)
+    let match = alarms[i].match(/(h=\d{2}m=\d{2}n=\d{2})/);
+    if (match && !rxBuffer.includes(match[1])) {
+      allSet = false;
+      log(`Verification failed for alarm ${i} (Missing ${match[1]})`);
+    }
+  }
+  return allSet;
+}
+
+// Requirement 2 & 3: Wait for responses and retry loop
 async function setAlarms() {
+  const btn = document.getElementById('btnSetAlarms');
   const time = document.getElementById('startTime').value;
+  
   if (!time || !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)) { 
     log('Error: Enter a valid 24h time (HH:MM)'); 
     return; 
   }
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'Setting Alarms...';
+
   const alarms = generateAlarms(time);
-  for (const cmd of alarms) {
-    await sendCmd(cmd);
-    await new Promise(r => setTimeout(r, 300));
+  let success = false;
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (!success && attempts < maxAttempts) {
+    attempts++;
+    if (attempts > 1) log(`Retrying... (Attempt ${attempts}/${maxAttempts})`);
+    
+    // Set all alarms
+    for (const cmd of alarms) {
+      await sendCmd(cmd);
+      // Wait for device to respond before sending the next one
+      await waitForResponse(1000); 
+    }
+    
+    log('Verifying alarms...');
+    success = await checkAlarms(alarms);
   }
-  log('All 5 alarms set');
+
+  if (success) {
+    log('All 5 alarms set and verified correctly!');
+  } else {
+    log('Error: Failed to set all alarms correctly after 3 attempts.');
+  }
+
+  btn.disabled = false;
+  btn.textContent = originalText;
 }
 
 async function readAlarms() {
@@ -421,7 +514,6 @@ renderSavedDevices();
   if (saved.length === 0) return;
   try {
     const granted = await navigator.bluetooth.getDevices();
-    // Try the most recently saved device first
     for (const s of saved.slice().reverse()) {
       const match = granted.find(d => d.id === s.id || d.name === s.name);
       if (match) {
