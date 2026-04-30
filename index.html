@@ -33,6 +33,18 @@ input[type="time"], input[type="text"], select {
   margin-bottom: 8px;
   -webkit-appearance: none;
 }
+
+/* New styles specifically for the time input */
+#startTime {
+  text-align: center;
+  font-size: 3rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  padding: 20px 10px;
+  margin-top: 4px;
+  margin-bottom: 16px;
+}
+
 button {
   width: 100%;
   padding: 12px;
@@ -111,9 +123,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 <div class="card">
   <h2>Alarms</h2>
-  <input type="text" id="startTime" value="09:00" placeholder="HH:MM (e.g., 14:30)" maxlength="5">
+  <input type="text" id="startTime" value="09:00" placeholder="HH:MM" maxlength="5">
   <button id="btnSetAlarms" class="btn-alarm" onclick="setAlarms()" disabled>Set 5 Alarms (1 min apart)</button>
-  <button id="btnReadAlarms" class="btn-read" onclick="readAlarms()" disabled>Read Alarms</button>
 </div>
 
 <div class="card">
@@ -124,6 +135,7 @@ button:disabled { opacity: 0.4; cursor: default; }
       <button id="btnSyncTime" class="btn-sync" onclick="syncTime()" disabled>Sync Time</button>
       <button id="btnVersion" class="btn-secondary" onclick="sendCmd('version=?')" disabled>Version</button>
       <button id="btnReadTimer" class="btn-secondary" onclick="sendCmd('sittimes=?')" disabled>Read Timer</button>
+      <button id="btnReadAlarms" class="btn-read" onclick="readAlarms()" disabled>Read Alarms</button>
     </div>
   </details>
 </div>
