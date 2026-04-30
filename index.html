@@ -96,15 +96,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .row { display: flex; gap: 8px; }
 .row > * { flex: 1; }
-.alarm-preview {
-  font-family: "SF Mono", Menlo, monospace;
-  font-size: 0.8rem;
-  color: #a0c4ff;
-  padding: 6px;
-  background: #0a0a1a;
-  border-radius: 6px;
-  margin-bottom: 8px;
-}
 </style>
 </head>
 <body>
@@ -122,23 +113,18 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 <div class="card">
   <h2>Alarms</h2>
-  <label for="startTime">First alarm time</label>
-  <input type="time" id="startTime" value="09:00">
-  <div id="alarmPreview" class="alarm-preview"></div>
+  <label for="startTime">First alarm time (24h format)</label>
+  <input type="text" id="startTime" value="09:00" placeholder="HH:MM (e.g., 14:30)" maxlength="5">
   <button id="btnSetAlarms" class="btn-alarm" onclick="setAlarms()" disabled>Set 5 Alarms (1 min apart)</button>
   <button id="btnReadAlarms" class="btn-read" onclick="readAlarms()" disabled>Read Alarms</button>
 </div>
 
 <div class="card">
   <h2>Quick Actions</h2>
-  <div class="row">
-    <button id="btnZap" class="btn-zap" onclick="sendCmd('light=01')" disabled>Zap</button>
-    <button id="btnSyncTime" class="btn-sync" onclick="syncTime()" disabled>Sync Time</button>
-  </div>
-  <div class="row">
-    <button id="btnVersion" class="btn-secondary" onclick="sendCmd('version=?')" disabled>Version</button>
-    <button id="btnReadTimer" class="btn-secondary" onclick="sendCmd('sittimes=?')" disabled>Read Timer</button>
-  </div>
+  <button id="btnZap" class="btn-zap" onclick="sendCmd('light=01')" disabled>Zap</button>
+  <button id="btnSyncTime" class="btn-sync" onclick="syncTime()" disabled>Sync Time</button>
+  <button id="btnVersion" class="btn-secondary" onclick="sendCmd('version=?')" disabled>Version</button>
+  <button id="btnReadTimer" class="btn-secondary" onclick="sendCmd('sittimes=?')" disabled>Read Timer</button>
 </div>
 
 <div class="card">
@@ -369,22 +355,12 @@ function generateAlarms(startTime) {
   return alarms;
 }
 
-function updateAlarmPreview() {
-  const time = document.getElementById('startTime').value;
-  if (!time) return;
-  const alarms = generateAlarms(time);
-  const [h, m] = time.split(':').map(Number);
-  const lines = alarms.map((_, i) => {
-    const tm = (m + i) % 60;
-    const th = (h + Math.floor((m + i) / 60)) % 24;
-    return `${String(th).padStart(2,'0')}:${String(tm).padStart(2,'0')}  power ${i+1}`;
-  });
-  document.getElementById('alarmPreview').textContent = lines.join('\n');
-}
-
 async function setAlarms() {
   const time = document.getElementById('startTime').value;
-  if (!time) { log('Set a start time first'); return; }
+  if (!time || !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)) { 
+    log('Error: Enter a valid 24h time (HH:MM)'); 
+    return; 
+  }
   const alarms = generateAlarms(time);
   for (const cmd of alarms) {
     await sendCmd(cmd);
@@ -415,9 +391,15 @@ function clearLog() {
 }
 
 // Init
-document.getElementById('startTime').addEventListener('input', updateAlarmPreview);
+document.getElementById('startTime').addEventListener('input', function(e) {
+  let val = e.target.value.replace(/\D/g, '');
+  if (val.length > 4) val = val.substring(0, 4);
+  if (val.length > 2) {
+    val = val.substring(0, 2) + ':' + val.substring(2, 4);
+  }
+  e.target.value = val;
+});
 renderSavedDevices();
-updateAlarmPreview();
 
 // Auto-reconnect to last used device on page load
 (async function autoReconnect() {
