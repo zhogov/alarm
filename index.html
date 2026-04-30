@@ -64,7 +64,6 @@ button {
 }
 button:active { transform: scale(0.97); }
 .btn-connect { background: #0077b6; color: #fff; }
-.btn-connect.connected { background: #2a9d8f; }
 .btn-disconnect { background: #e63946; color: #fff; }
 .btn-alarm { background: #e76f51; color: #fff; }
 .btn-zap { background: #f4a261; color: #000; }
@@ -141,13 +140,9 @@ function setConnectedUI(connected) {
   const btn = document.getElementById('btnConnect');
   const savedContainer = document.getElementById('savedDevices');
 
-  btn.textContent = connected ? 'Connected' : 'Scan & Connect';
-  btn.className = connected ? 'btn-connect connected' : 'btn-connect';
-  btn.disabled = connected;
-
   // Toggle visibility of the connect buttons based on connection state
   if (connected) {
-    btn.style.display = 'block';
+    btn.style.display = 'none';
     savedContainer.style.display = 'none';
   } else {
     savedContainer.style.display = 'block';
