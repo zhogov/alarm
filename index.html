@@ -79,8 +79,6 @@ button:disabled, input:disabled { opacity: 0.4; cursor: default; }
   padding: 10px;
   font-family: "SF Mono", Menlo, monospace;
   font-size: 0.75rem;
-  max-height: 200px;
-  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
   color: #8ecae6;
@@ -136,7 +134,9 @@ function log(msg) {
   const el = document.getElementById('log');
   const ts = new Date().toLocaleTimeString();
   el.textContent += `[${ts}] ${msg}\n`;
-  el.scrollTop = el.scrollHeight;
+  // Without max-height, scrolling the container doesn't do much, 
+  // but if the window needs to scroll to see the new log, we can use this:
+  // window.scrollTo(0, document.body.scrollHeight);
 }
 
 function setConnectedUI(connected) {
@@ -218,11 +218,11 @@ function renderSavedDevices() {
 
   container.innerHTML = devices.map(d => `
     <div class="row" style="margin-bottom: 8px;">
-      <button class="btn-connect" style="flex: 2; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" onclick="connectToSaved('${d.id}','${d.name}')">
+      <button class="btn-connect" style="flex: 1; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" onclick="connectToSaved('${d.id}','${d.name}')">
         Connect ${d.name || d.id}
       </button>
-      <button class="btn-disconnect" style="flex: 1; margin-bottom: 0;" onclick="removeDevice('${d.id}')">
-        F
+      <button class="btn-disconnect" style="flex: 0 0 auto; width: auto; margin-bottom: 0; padding-left: 16px; padding-right: 16px;" onclick="removeDevice('${d.id}')">
+        X
       </button>
     </div>
   `).join('');
