@@ -143,6 +143,7 @@ const STORAGE_KEY = 'zap_saved_devices';
 let device = null;
 let server = null;
 let characteristic = null;
+let rxAccumulator = '';
 
 function log(msg) {
   const el = document.getElementById('log');
@@ -345,6 +346,7 @@ function onNotification(event) {
     if (bytes[i] !== 0) text += String.fromCharCode(bytes[i]);
   }
   log(`[RX] ${text}`);
+  rxAccumulator += text;
 }
 
 async function writeChar(data) {
@@ -389,12 +391,56 @@ async function setAlarms() {
     log('Error: Enter a valid time'); 
     return; 
   }
+  
   const alarms = generateAlarms(time);
-  for (const cmd of alarms) {
-    await sendCmd(cmd);
-    await new Promise(r => setTimeout(r, 300));
+  const btn = document.getElementById('btnSetAlarms');
+  btn.disabled = true;
+  
+  // Calculate expected length (one alarm line * 5)
+  const expectedDataLen = alarms[0].length * 5;
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    log(`Setting alarms (Attempt ${attempt}/3)...`);
+    for (const cmd of alarms) {
+      await sendCmd(cmd);
+      await new Promise(r => setTimeout(r, 300));
+    }
+    
+    log('Requesting verification...');
+    rxAccumulator = ''; // clear buffer before reading
+    await sendCmd('alarm=?');
+    
+    // Smart polling: stop waiting once we receive enough characters
+    for (let poll = 0; poll < 15; poll++) {
+      if (rxAccumulator.length >= expectedDataLen) {
+        break; // We have enough data! Stop waiting immediately.
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    
+    let allFound = true;
+    for (let i = 0; i < 5; i++) {
+      const match = alarms[i].match(/h=(\d{2})m=(\d{2})/);
+      if (match) {
+        const expectStr = `h=${match[1]}m=${match[2]}`;
+        if (!rxAccumulator.includes(expectStr)) {
+          allFound = false;
+          break;
+        }
+      }
+    }
+    
+    if (allFound) {
+      log('✅ All 5 alarms verified successfully!');
+      if (device && device.gatt && device.gatt.connected) btn.disabled = false;
+      return;
+    } else {
+      log(`❌ Verification failed on attempt ${attempt}.`);
+    }
   }
-  log('All 5 alarms set');
+  
+  log('⚠️ Failed to verify all alarms after 3 attempts.');
+  if (device && device.gatt && device.gatt.connected) btn.disabled = false;
 }
 
 async function readAlarms() {
