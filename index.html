@@ -396,8 +396,8 @@ async function setAlarms() {
   const btn = document.getElementById('btnSetAlarms');
   btn.disabled = true;
   
-  // Calculate expected length (one alarm line * 5)
-  const expectedDataLen = alarms[0].length * 5;
+  // Calculate expected length (one alarm line length * 5) + header length
+  const expectedDataLen = alarms[0].length * 5 + 21;
   
   for (let attempt = 1; attempt <= 3; attempt++) {
     log(`Setting alarms (Attempt ${attempt}/3)...`);
